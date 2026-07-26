@@ -22,7 +22,6 @@ DEFAULT_SETTINGS = {
     "countdown_tick_sound": "beep",
     "exercise_complete_sound": "exercise_complete",
     "training_complete_sound": "training_complete",
-    "show_exercise_images": True,
     "show_home_page": True,
     "show_timer_page": True,
     "show_workout_page": True,
@@ -36,8 +35,6 @@ DEFAULT_SETTINGS = {
     "gamepad_enabled": True,
     "gamepad_hints": True,
     "deck_mode": "auto",
-    "fullscreen_mode": "auto",
-    "force_dark": False,
 }
 
 
@@ -49,7 +46,6 @@ class AppSettings:
     countdown_tick_sound: str = "beep"
     exercise_complete_sound: str = "exercise_complete"
     training_complete_sound: str = "training_complete"
-    show_exercise_images: bool = True
     show_home_page: bool = True
     show_timer_page: bool = True
     show_workout_page: bool = True
@@ -63,8 +59,6 @@ class AppSettings:
     gamepad_enabled: bool = True
     gamepad_hints: bool = True
     deck_mode: str = "auto"
-    fullscreen_mode: str = "auto"
-    force_dark: bool = False
 
     def get_sound(self, event_key: str) -> str | None:
         if not self.sound_enabled:

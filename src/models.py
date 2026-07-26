@@ -19,6 +19,7 @@ class Exercise:
     rest_seconds: int = 30
     weight_kg: Optional[float] = None
     image_path: Optional[str] = None
+    sets: int = 1
 
     def is_timed(self) -> bool:
         return self.duration_seconds is not None and self.duration_seconds > 0
@@ -29,6 +30,7 @@ class Exercise:
             "duration_seconds": self.duration_seconds,
             "reps": self.reps,
             "rest_seconds": self.rest_seconds,
+            "sets": self.sets,
         }
         if self.weight_kg is not None:
             d["weight_kg"] = self.weight_kg
@@ -47,6 +49,7 @@ class Exercise:
             rest_seconds=d.get("rest_seconds", 30),
             weight_kg=weight,
             image_path=d.get("image_path"),
+            sets=max(1, d.get("sets", 1)),
         )
 
 
@@ -62,9 +65,10 @@ class TrainingPlan:
     def total_planned_seconds(self) -> int:
         total = 0
         for ex in self.exercises:
+            sets = max(1, ex.sets)
             if ex.duration_seconds:
-                total += ex.duration_seconds
-            total += ex.rest_seconds
+                total += ex.duration_seconds * sets
+            total += ex.rest_seconds * sets
         total *= self.total_rounds
         if self.total_rounds > 1 and self.rest_between_rounds_seconds > 0:
             total += self.rest_between_rounds_seconds * (self.total_rounds - 1)
@@ -104,8 +108,10 @@ class ExerciseLog:
     rest_seconds: int = 0
     actual_rest_seconds: Optional[int] = None
     completed: bool = True
-    image_path: Optional[str] = None
     round_number: int = 1
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    set_number: int = 1
 
     def to_dict(self) -> dict:
         d = {
@@ -118,13 +124,14 @@ class ExerciseLog:
             "actual_rest_seconds": self.actual_rest_seconds,
             "completed": self.completed,
             "round_number": self.round_number,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "set_number": self.set_number,
         }
         if self.planned_weight_kg is not None:
             d["planned_weight_kg"] = self.planned_weight_kg
         if self.actual_weight_kg is not None:
             d["actual_weight_kg"] = self.actual_weight_kg
-        if self.image_path is not None:
-            d["image_path"] = self.image_path
         return d
 
     @classmethod
@@ -133,6 +140,8 @@ class ExerciseLog:
         planned_w = float(planned_w) if planned_w is not None else None
         actual_w = d.get("actual_weight_kg")
         actual_w = float(actual_w) if actual_w is not None else None
+        started = d.get("started_at")
+        finished = d.get("finished_at")
         return cls(
             exercise_name=d.get("exercise_name", ""),
             planned_duration_seconds=d.get("planned_duration_seconds"),
@@ -144,8 +153,10 @@ class ExerciseLog:
             rest_seconds=d.get("rest_seconds", 0),
             actual_rest_seconds=d.get("actual_rest_seconds"),
             completed=d.get("completed", True),
-            image_path=d.get("image_path"),
             round_number=d.get("round_number", 1),
+            started_at=datetime.fromisoformat(started) if started else None,
+            finished_at=datetime.fromisoformat(finished) if finished else None,
+            set_number=d.get("set_number", 1),
         )
 
 

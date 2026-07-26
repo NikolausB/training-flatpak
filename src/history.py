@@ -1,6 +1,7 @@
 import os
 from gi.repository import Adw, Gtk, GLib
-from models import TrainingSession, ExerciseLog
+from controller_focus import ControllerFocusTracker
+from models import TrainingSession
 from data_store import DataStore
 
 
@@ -9,43 +10,38 @@ class HistoryPage(Adw.Bin):
         super().__init__(**kwargs)
         self._store = data_store
         self._sessions: list[TrainingSession] = []
+        self._current_session_id: str | None = None
+        self._list_focus = ControllerFocusTracker()
+        self._detail_focus = ControllerFocusTracker()
         self._build_ui()
 
     def _build_ui(self):
-        self._stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.SLIDE_LEFT_RIGHT, vhomogeneous=True)
-        self._stack.set_vexpand(True)
+        self._nav = Adw.NavigationView()
+        self._nav.connect("popped", self._on_nav_popped)
 
-        self._build_list_view()
-        self._build_detail_view()
+        self._build_list_page()
+        self._build_detail_page()
 
-        self.set_child(self._stack)
+        self.set_child(self._nav)
 
-    def _build_list_view(self):
+    def _build_list_page(self):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box.set_margin_top(24)
         box.set_margin_bottom(24)
         box.set_margin_start(24)
         box.set_margin_end(24)
 
-        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        header_box.set_valign(Gtk.Align.CENTER)
-
-        header = Gtk.Label(label="Training History", css_classes=["title-1"])
-        header.set_hexpand(True)
-        header.set_halign(Gtk.Align.START)
-        header_box.append(header)
-
+        io_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, halign=Gtk.Align.END)
         export_btn = Gtk.Button(label="Export", icon_name="document-save-symbolic", css_classes=["flat"])
         export_btn.set_tooltip_text("Export history to CSV")
         export_btn.connect("clicked", self._on_export_clicked)
-        header_box.append(export_btn)
+        io_box.append(export_btn)
 
         import_btn = Gtk.Button(label="Import", icon_name="document-open-symbolic", css_classes=["flat"])
         import_btn.set_tooltip_text("Import history from CSV")
         import_btn.connect("clicked", self._on_import_clicked)
-        header_box.append(import_btn)
-
-        box.append(header_box)
+        io_box.append(import_btn)
+        box.append(io_box)
 
         self._list_stack = Gtk.Stack(vhomogeneous=True)
         self._list_stack.set_vexpand(True)
@@ -62,35 +58,51 @@ class HistoryPage(Adw.Bin):
         self._list_stack.add_named(empty_label, "empty")
 
         box.append(self._list_stack)
-        self._stack.add_named(box, "main")
 
-    def _build_detail_view(self):
+        self._list_page = Adw.NavigationPage(title="History")
+        self._list_page.set_child(box)
+        self._nav.add(self._list_page)
+
+    def _build_detail_page(self):
+        toolbar = Adw.ToolbarView()
+        header = Adw.HeaderBar()
+        header.set_show_start_title_buttons(False)
+        header.set_show_end_title_buttons(False)
+        toolbar.add_top_bar(header)
+
+        scrolled = Gtk.ScrolledWindow(vexpand=True)
+        clamp = Adw.Clamp()
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        box.set_margin_top(24)
-        box.set_margin_bottom(24)
-        box.set_margin_start(24)
-        box.set_margin_end(24)
+        box.set_margin_top(12)
+        box.set_margin_bottom(12)
+        box.set_margin_start(12)
+        box.set_margin_end(12)
 
-        back_btn = Gtk.Button(label="Back")
-        back_btn.connect("clicked", lambda _: self._show_list())
-        box.append(back_btn)
-
-        self._detail_header = Gtk.Label(label="", css_classes=["title-1"])
+        self._detail_header = Gtk.Label(label="", css_classes=["title-2"])
         box.append(self._detail_header)
 
         self._detail_info = Gtk.Label(label="", css_classes=["dim-label"])
         box.append(self._detail_info)
 
         self._detail_exercises_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self._detail_scrolled = Gtk.ScrolledWindow(vexpand=True)
-        self._detail_scrolled.set_child(self._detail_exercises_box)
-        box.append(self._detail_scrolled)
+        box.append(self._detail_exercises_box)
 
-        self._delete_btn = Gtk.Button(label="Delete Session", css_classes=["destructive-action"])
-        self._delete_btn.connect("clicked", self._on_delete_current_session)
-        box.append(self._delete_btn)
+        actions_group = Adw.PreferencesGroup()
+        self._delete_btn = Adw.ButtonRow(title="Delete Session", css_classes=["destructive-action"])
+        self._delete_btn.connect("activated", self._on_delete_current_session)
+        actions_group.add(self._delete_btn)
+        box.append(actions_group)
 
-        self._stack.add_named(box, "detail")
+        clamp.set_child(box)
+        scrolled.set_child(clamp)
+        toolbar.set_content(scrolled)
+
+        self._detail_page = Adw.NavigationPage(title="Session")
+        self._detail_page.set_child(toolbar)
+
+    def _on_nav_popped(self, nav, *args):
+        if nav.get_visible_page() == self._list_page:
+            self.refresh()
 
     def refresh(self):
         self._sessions = self._store.load_sessions()
@@ -102,12 +114,23 @@ class HistoryPage(Adw.Bin):
 
         if not self._sessions:
             self._list_stack.set_visible_child_name("empty")
+            self._list_focus.set_widgets([])
             return
 
         for session in self._sessions:
             self._add_session_row(session)
 
         self._list_stack.set_visible_child_name("list")
+        self._refresh_list_focus()
+        self._list_focus.focus_first()
+
+    def _refresh_list_focus(self):
+        rows = []
+        row = self._session_list_box.get_row_at_index(0)
+        while row is not None:
+            rows.append(row)
+            row = row.get_next_sibling() or self._session_list_box.get_row_at_index(row.get_index() + 1)
+        self._list_focus.set_widgets(rows)
 
     def _add_session_row(self, session: TrainingSession):
         planned_min = session.total_planned_seconds // 60
@@ -134,14 +157,11 @@ class HistoryPage(Adw.Bin):
         if self._current_session_id:
             self._store.delete_session(self._current_session_id)
             self._current_session_id = None
-            self._show_list()
-
-    def _show_list(self):
-        self.refresh()
-        self._stack.set_visible_child_name("main")
+            self._nav.pop_to_page(self._list_page)
 
     def _show_detail(self, session: TrainingSession):
         self._current_session_id = session.id
+        self._detail_page.set_title(session.plan_name)
         self._detail_header.set_label(session.plan_name)
         date_str = session.started_at.strftime("%Y-%m-%d %H:%M")
         finished_str = session.finished_at.strftime("%H:%M") if session.finished_at else "?"
@@ -169,28 +189,24 @@ class HistoryPage(Adw.Bin):
             title = ex_log.exercise_name
             if show_rounds and ex_log.round_number > 1:
                 title = f"R{ex_log.round_number}: {ex_log.exercise_name}"
+            if ex_log.set_number and ex_log.set_number > 1:
+                title += f" (Set {ex_log.set_number})"
             row = Adw.ActionRow(title=title)
 
+            details = []
             if ex_log.planned_duration_seconds is not None:
-                detail = f"Time: {self._fmt_dur(ex_log.actual_duration_seconds)} / {self._fmt_dur(ex_log.planned_duration_seconds)}"
+                details.append(f"Time: {self._fmt_dur(ex_log.actual_duration_seconds)} / {self._fmt_dur(ex_log.planned_duration_seconds)}")
             elif ex_log.planned_reps is not None:
                 actual = ex_log.actual_reps if ex_log.actual_reps is not None else "?"
-                detail = f"Reps: {actual} / {ex_log.planned_reps}"
-            else:
-                detail = ""
+                details.append(f"Reps: {actual} / {ex_log.planned_reps}")
 
             if ex_log.planned_weight_kg is not None and ex_log.planned_weight_kg > 0:
-                weight_str = f"Weight: {ex_log.planned_weight_kg:g}kg"
-                if detail:
-                    detail = f"{detail} | {weight_str}"
-                else:
-                    detail = weight_str
+                details.append(f"Weight: {ex_log.planned_weight_kg:g}kg")
 
-            rest_info = f"Rest: {self._fmt_dur(ex_log.actual_rest_seconds)} / {self._fmt_dur(ex_log.rest_seconds)}"
-            if detail:
-                row.set_subtitle(f"{detail} | {rest_info}")
-            else:
-                row.set_subtitle(rest_info)
+            details.append(f"Rest: {self._fmt_dur(ex_log.actual_rest_seconds)} / {self._fmt_dur(ex_log.rest_seconds)}")
+            details.append(self._fmt_exercise_time(ex_log))
+
+            row.set_subtitle(" | ".join(details))
 
             if not ex_log.completed:
                 row.add_css_class("error")
@@ -201,7 +217,9 @@ class HistoryPage(Adw.Bin):
             group.add(row)
 
         self._detail_exercises_box.append(group)
-        self._stack.set_visible_child_name("detail")
+        self._nav.push(self._detail_page)
+        self._detail_focus.set_widgets([self._delete_btn])
+        self._detail_focus.focus_first()
 
     @staticmethod
     def _fmt_dur(seconds) -> str:
@@ -209,6 +227,14 @@ class HistoryPage(Adw.Bin):
             return "--:--"
         s = max(0, int(seconds))
         return f"{s // 60:02d}:{s % 60:02d}"
+
+    @staticmethod
+    def _fmt_exercise_time(ex_log) -> str:
+        if ex_log.started_at and ex_log.finished_at:
+            start = ex_log.started_at.strftime("%H:%M")
+            finish = ex_log.finished_at.strftime("%H:%M")
+            return f"{start} - {finish} ({HistoryPage._fmt_dur(ex_log.actual_duration_seconds)})"
+        return f"Duration: {HistoryPage._fmt_dur(ex_log.actual_duration_seconds)}"
 
     def _on_export_clicked(self, btn):
         from csv_io import export_history_csv
@@ -282,55 +308,23 @@ class HistoryPage(Adw.Bin):
 
         chooser.connect("response", on_response)
         chooser.show()
+
     def get_controller_context(self):
-        visible = self._stack.get_visible_child_name()
-        if visible == "detail":
-            return "list"
         return "list"
 
-    def _focusable_list_rows(self):
-        rows = []
-        if self._stack.get_visible_child_name() != "main":
-            return rows
-        row = self._session_list_box.get_row_at_index(0)
-        while row is not None:
-            rows.append(row)
-            row = row.get_next_sibling() or self._session_list_box.get_row_at_index(row.get_index() + 1)
-        return rows
-
-    def _get_focus(self):
-        native = self.get_native()
-        return native.get_focus() if native else None
-
-    def _focus_cycle(self, delta):
-        visible = self._stack.get_visible_child_name()
-        if visible == "detail":
-            return
-        rows = self._focusable_list_rows()
-        if not rows:
-            return
-        idx = getattr(self, '_controller_focus_idx', -1)
-        old = rows[idx] if 0 <= idx < len(rows) else None
-        next_idx = (idx + delta) % len(rows)
-        self._controller_focus_idx = next_idx
-        if old is not None and old is not rows[next_idx]:
-            old.remove_css_class("controller-focus")
-        rows[next_idx].add_css_class("controller-focus")
-        rows[next_idx].grab_focus()
-
     def controller_dpad_up(self):
-        visible = self._stack.get_visible_child_name()
-        if visible == "detail":
-            self._scroll_detail(-60)
+        visible = self._nav.get_visible_page()
+        if visible == self._detail_page:
+            self._detail_focus.cycle(-1)
         else:
-            self._focus_cycle(-1)
+            self._list_focus.cycle(-1)
 
     def controller_dpad_down(self):
-        visible = self._stack.get_visible_child_name()
-        if visible == "detail":
-            self._scroll_detail(60)
+        visible = self._nav.get_visible_page()
+        if visible == self._detail_page:
+            self._detail_focus.cycle(1)
         else:
-            self._focus_cycle(1)
+            self._list_focus.cycle(1)
 
     def controller_scroll_up(self):
         self._scroll_detail(-120)
@@ -339,21 +333,24 @@ class HistoryPage(Adw.Bin):
         self._scroll_detail(120)
 
     def _scroll_detail(self, delta):
-        vadj = self._detail_scrolled.get_vadjustment()
-        new_val = vadj.get_value() + delta
-        vadj.set_value(max(0, min(new_val, vadj.get_upper() - vadj.get_page_size())))
+        pass
 
     def controller_a(self):
-        visible = self._stack.get_visible_child_name()
-        if visible == "detail":
+        visible = self._nav.get_visible_page()
+        if visible == self._detail_page:
+            widget = self._detail_focus.current_widget()
+            if widget is not None:
+                widget.emit("activated")
             return
-        idx = getattr(self, '_controller_focus_idx', 0)
-        if 0 <= idx < len(self._sessions):
-            self._show_detail(self._sessions[idx])
+        widget = self._list_focus.current_widget()
+        if widget is not None:
+            idx = widget.get_index()
+            if 0 <= idx < len(self._sessions):
+                self._show_detail(self._sessions[idx])
 
     def controller_back(self):
-        if self._stack.get_visible_child_name() == "detail":
-            self._show_list()
+        if self._nav.get_visible_page() == self._detail_page:
+            self._nav.pop_to_page(self._list_page)
             return
 
     def update_fonts(self, width, height):

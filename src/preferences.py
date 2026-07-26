@@ -35,30 +35,36 @@ class PreferencesDialog(Adw.Dialog):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.set_title("Preferences")
-        self.set_content_width(400)
-        self.set_content_height(500)
+        self.set_content_width(420)
+        self.set_content_height(560)
 
         self._settings = AppSettings(**app_settings.to_dict())
+        self._focus_tracker = _DialogFocusTracker()
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
         toolbar.add_top_bar(header)
 
-        scrolled = Gtk.ScrolledWindow(vexpand=True)
-        clamp = Adw.Clamp()
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        box.set_margin_top(12)
-        box.set_margin_bottom(12)
-        box.set_margin_start(12)
-        box.set_margin_end(12)
+        self._page = Adw.PreferencesPage()
+        self._build_sound_group()
+        self._build_tabs_group()
+        self._build_controller_group()
 
-        sound_group = Adw.PreferencesGroup(title="Sounds")
-        sound_group.set_description("Choose sounds played during training events")
+        scrolled = Gtk.ScrolledWindow(vexpand=True)
+        scrolled.set_child(self._page)
+        toolbar.set_content(scrolled)
+        self.set_child(toolbar)
+
+        self.connect("realize", self._on_realize)
+
+    def _build_sound_group(self):
+        group = Adw.PreferencesGroup(title="Sounds")
+        group.set_description("Choose sounds played during training events")
 
         self._sound_switch = Adw.SwitchRow(title="Sound Enabled")
         self._sound_switch.set_active(self._settings.sound_enabled)
         self._sound_switch.connect("notify::active", self._on_sound_enabled_toggled)
-        sound_group.add(self._sound_switch)
+        group.add(self._sound_switch)
 
         self._combo_rows: dict[str, Adw.ComboRow] = {}
         self._preview_rows: dict[str, Gtk.Button] = {}
@@ -87,71 +93,61 @@ class PreferencesDialog(Adw.Dialog):
 
             self._combo_rows[event_key] = row
             self._preview_rows[event_key] = preview_btn
-            sound_group.add(row)
+            group.add(row)
 
-        box.append(sound_group)
+        self._page.add(group)
 
-        display_group = Adw.PreferencesGroup(title="Display")
-        display_group.set_description("Control what is shown during workouts")
-
-        self._images_switch = Adw.SwitchRow(
-            title="Show Exercise Images",
-            subtitle="Display exercise images during workouts and in summaries",
-        )
-        self._images_switch.set_active(self._settings.show_exercise_images)
-        display_group.add(self._images_switch)
-
-        box.append(display_group)
-
-        tabs_group = Adw.PreferencesGroup(title="Tabs")
-        tabs_group.set_description("Choose which tabs are shown in the main view")
+    def _build_tabs_group(self):
+        group = Adw.PreferencesGroup(title="Tabs")
+        group.set_description("Choose which tabs are shown in the main view")
 
         self._home_switch = Adw.SwitchRow(
             title="Show Home Page",
             subtitle="Landing page with recent and recommended workouts",
         )
         self._home_switch.set_active(self._settings.show_home_page)
-        tabs_group.add(self._home_switch)
+        group.add(self._home_switch)
 
         self._timer_switch = Adw.SwitchRow(
             title="Show Round Timer",
             subtitle="Configurable round timer with pause periods",
         )
         self._timer_switch.set_active(self._settings.show_timer_page)
-        tabs_group.add(self._timer_switch)
+        group.add(self._timer_switch)
 
         self._workout_switch = Adw.SwitchRow(
             title="Show Training Plans",
             subtitle="Training plan builder and runner",
         )
         self._workout_switch.set_active(self._settings.show_workout_page)
-        tabs_group.add(self._workout_switch)
+        group.add(self._workout_switch)
 
         self._ai_switch = Adw.SwitchRow(
             title="Show AI Coach",
             subtitle="AI-powered training plan generator (requires network access)",
         )
         self._ai_switch.set_active(self._settings.show_ai_page)
-        tabs_group.add(self._ai_switch)
+        group.add(self._ai_switch)
 
-        box.append(tabs_group)
+        self._page.add(group)
 
-        gamepad_group = Adw.PreferencesGroup(title="Controller &amp; Deck Mode")
-        gamepad_group.set_description("Settings for gamepad and Steam Deck compatibility")
+    def _build_controller_group(self):
+        group = Adw.PreferencesGroup(title="Controller & Deck Mode")
+        group.set_description("Settings for gamepad and Steam Deck compatibility")
 
         self._gamepad_switch = Adw.SwitchRow(
             title="Enable Gamepad",
             subtitle="Support for controllers and Steam Deck input",
         )
         self._gamepad_switch.set_active(self._settings.gamepad_enabled)
-        gamepad_group.add(self._gamepad_switch)
+        group.add(self._gamepad_switch)
 
         self._hints_switch = Adw.SwitchRow(
             title="Show Button Hints",
             subtitle="Display controller button hints during workouts",
         )
         self._hints_switch.set_active(self._settings.gamepad_hints)
-        gamepad_group.add(self._hints_switch)
+        group.add(self._hints_switch)
 
         self._deck_combo = Adw.ComboRow(
             title="Deck Mode",
@@ -161,35 +157,27 @@ class PreferencesDialog(Adw.Dialog):
         self._deck_combo.set_model(deck_items)
         idx = {"auto": 0, "on": 1, "off": 2}.get(self._settings.deck_mode, 0)
         self._deck_combo.set_selected(idx)
-        gamepad_group.add(self._deck_combo)
+        group.add(self._deck_combo)
 
-        self._dark_switch = Adw.SwitchRow(
-            title="Force Dark Mode",
-            subtitle="Always use dark color scheme (recommended for Steam Deck)",
-        )
-        self._dark_switch.set_active(self._settings.force_dark)
-        gamepad_group.add(self._dark_switch)
+        self._page.add(group)
 
-        self._fullscreen_combo = Adw.ComboRow(
-            title="Fullscreen",
-            subtitle="Auto-detect or force fullscreen behavior",
-        )
-        fullscreen_items = Gtk.StringList.new(["Auto", "On", "Off"])
-        self._fullscreen_combo.set_model(fullscreen_items)
-        idx = {"auto": 0, "on": 1, "off": 2}.get(self._settings.fullscreen_mode, 0)
-        self._fullscreen_combo.set_selected(idx)
-        gamepad_group.add(self._fullscreen_combo)
+    def _on_realize(self, *args):
+        self._refresh_focus_widgets()
+        self._focus_tracker.focus_first()
 
-        box.append(gamepad_group)
-
-        save_btn = Gtk.Button(label="Save", css_classes=["suggested-action"], halign=Gtk.Align.END)
-        save_btn.connect("clicked", self._on_save_clicked)
-        box.append(save_btn)
-
-        clamp.set_child(box)
-        scrolled.set_child(clamp)
-        toolbar.set_content(scrolled)
-        self.set_child(toolbar)
+    def _refresh_focus_widgets(self):
+        widgets = [self._sound_switch]
+        widgets.extend(self._combo_rows.values())
+        widgets.extend([
+            self._home_switch,
+            self._timer_switch,
+            self._workout_switch,
+            self._ai_switch,
+            self._gamepad_switch,
+            self._hints_switch,
+            self._deck_combo,
+        ])
+        self._focus_tracker.set_widgets(widgets)
 
     def _sound_key_to_index(self, key: str) -> int:
         for i, s in enumerate(_SOUND_OPTIONS):
@@ -223,12 +211,11 @@ class PreferencesDialog(Adw.Dialog):
             return
         sound_player.play_sound(key)
 
-    def _on_save_clicked(self, btn):
-        from settings import save_settings, app_settings as global_settings
+    def _on_save_clicked(self):
+        global_settings = app_settings
         global_settings.sound_enabled = self._settings.sound_enabled
         for event_key in _EVENT_LABELS:
             setattr(global_settings, event_key, getattr(self._settings, event_key))
-        global_settings.show_exercise_images = self._images_switch.get_active()
         global_settings.show_home_page = self._home_switch.get_active()
         global_settings.show_timer_page = self._timer_switch.get_active()
         global_settings.show_workout_page = self._workout_switch.get_active()
@@ -237,61 +224,27 @@ class PreferencesDialog(Adw.Dialog):
         global_settings.gamepad_hints = self._hints_switch.get_active()
         deck_idx = self._deck_combo.get_selected()
         global_settings.deck_mode = ["auto", "on", "off"][deck_idx]
-        fullscreen_idx = self._fullscreen_combo.get_selected()
-        global_settings.fullscreen_mode = ["auto", "on", "off"][fullscreen_idx]
-        global_settings.force_dark = self._dark_switch.get_active()
-        Adw.StyleManager.get_default().set_color_scheme(
-            Adw.ColorScheme.FORCE_DARK if global_settings.force_dark else Adw.ColorScheme.DEFAULT
-        )
         save_settings(global_settings)
         self.close()
 
-    def _prefs_focusable_widgets(self):
-        widgets = [self._sound_switch]
-        widgets.extend(self._combo_rows.values())
-        widgets.append(self._images_switch)
-        widgets.append(self._home_switch)
-        widgets.append(self._timer_switch)
-        widgets.append(self._workout_switch)
-        widgets.append(self._ai_switch)
-        widgets.append(self._gamepad_switch)
-        widgets.append(self._hints_switch)
-        widgets.append(self._deck_combo)
-        widgets.append(self._dark_switch)
-        widgets.append(self._fullscreen_combo)
-        return widgets
-
-    def _prefs_focus_cycle(self, delta):
-        widgets = self._prefs_focusable_widgets()
-        if not widgets:
-            return
-        idx = getattr(self, '_controller_focus_idx', -1)
-        old = widgets[idx] if 0 <= idx < len(widgets) else None
-        next_idx = (idx + delta) % len(widgets)
-        self._controller_focus_idx = next_idx
-        if old is not None and old is not widgets[next_idx]:
-            old.remove_css_class("controller-focus")
-        widgets[next_idx].add_css_class("controller-focus")
-        widgets[next_idx].grab_focus()
+    # ---- Controller API ---------------------------------------------------
 
     def controller_dpad_up(self):
-        self._prefs_focus_cycle(-1)
+        self._focus_tracker.cycle(-1)
 
     def controller_dpad_down(self):
-        self._prefs_focus_cycle(1)
+        self._focus_tracker.cycle(1)
 
     def controller_dpad_left(self):
-        self._prefs_adjust(-1)
+        self._adjust_focused(-1)
 
     def controller_dpad_right(self):
-        self._prefs_adjust(1)
+        self._adjust_focused(1)
 
-    def _prefs_adjust(self, delta):
-        widgets = self._prefs_focusable_widgets()
-        idx = getattr(self, '_controller_focus_idx', -1)
-        if not (0 <= idx < len(widgets)):
+    def _adjust_focused(self, delta):
+        widget = self._focus_tracker.current_widget()
+        if widget is None:
             return
-        widget = widgets[idx]
         if isinstance(widget, Adw.ComboRow):
             model = widget.get_model()
             if model:
@@ -302,11 +255,9 @@ class PreferencesDialog(Adw.Dialog):
             widget.set_active(not widget.get_active())
 
     def controller_a(self):
-        widgets = self._prefs_focusable_widgets()
-        idx = getattr(self, '_controller_focus_idx', -1)
-        if not (0 <= idx < len(widgets)):
+        widget = self._focus_tracker.current_widget()
+        if widget is None:
             return
-        widget = widgets[idx]
         if isinstance(widget, Adw.SwitchRow):
             widget.set_active(not widget.get_active())
         elif isinstance(widget, Adw.ComboRow):
@@ -318,4 +269,52 @@ class PreferencesDialog(Adw.Dialog):
         self.close()
 
     def controller_start(self):
-        self._on_save_clicked(None)
+        self._on_save_clicked()
+
+
+class _DialogFocusTracker:
+    def __init__(self, css_class="controller-focus"):
+        self._widgets = []
+        self._index = -1
+        self._css_class = css_class
+
+    def set_widgets(self, widgets):
+        old = self.current_widget()
+        self._clear_outline()
+        self._widgets = [w for w in widgets if w is not None and w.get_sensitive()]
+        if old is not None and old in self._widgets:
+            self._index = self._widgets.index(old)
+        else:
+            self._index = -1
+
+    def current_widget(self):
+        if 0 <= self._index < len(self._widgets):
+            return self._widgets[self._index]
+        return None
+
+    def focus_first(self):
+        if self._widgets:
+            self._clear_outline()
+            self._index = 0
+            self._apply_outline()
+
+    def cycle(self, delta):
+        if not self._widgets:
+            return
+        self._clear_outline()
+        if self._index < 0:
+            self._index = 0 if delta >= 0 else len(self._widgets) - 1
+        else:
+            self._index = (self._index + delta) % len(self._widgets)
+        self._apply_outline()
+
+    def _clear_outline(self):
+        widget = self.current_widget()
+        if widget is not None:
+            widget.remove_css_class(self._css_class)
+
+    def _apply_outline(self):
+        widget = self.current_widget()
+        if widget is not None:
+            widget.add_css_class(self._css_class)
+            widget.grab_focus()

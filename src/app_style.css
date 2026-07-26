@@ -1,0 +1,30 @@
+/* Shared application styles — loaded once in the main window. */
+
+/* Controller focus outline: visible but subtle. */
+.controller-focus {
+    outline: 3px solid @accent_bg_color;
+    outline-offset: -1px;
+    border-radius: 9px;
+}
+
+/* Larger, clearer controller hint labels. */
+.controller-hints-label {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: 18px;
+    background: rgba(0, 0, 0, 0.55);
+    color: white;
+}
+
+/* Steam Deck / large-controller mode tweaks. */
+.deck-mode button:not(.flat):not(.image-button) {
+    min-width: 64px;
+    min-height: 44px;
+}
+
+.deck-mode .controller-hints-label {
+    font-size: 16px;
+    padding: 10px 16px;
+    border-radius: 20px;
+}

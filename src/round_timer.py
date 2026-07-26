@@ -4,6 +4,7 @@ from sound import sound_player
 from settings import app_settings
 from models import RoundConfig
 from ui_scaling import apply_scaling
+from controller_focus import ControllerFocusTracker
 
 
 class RoundTimerPage(Adw.Bin):
@@ -17,6 +18,8 @@ class RoundTimerPage(Adw.Bin):
         self._current_round = 0
         self._is_pause = False
         self._total_rounds = 0
+
+        self._focus = ControllerFocusTracker()
 
         self._build_ui()
 
@@ -36,19 +39,24 @@ class RoundTimerPage(Adw.Bin):
 
         main_box.append(config_group)
 
+        timer_group = Adw.PreferencesGroup()
+        timer_group.set_title("Timer")
+        timer_group.set_margin_top(12)
+
         self._round_label = Gtk.Label(label="Round 0 / 0")
         self._round_label.add_css_class("title-2")
-        self._round_label.set_margin_top(18)
-        main_box.append(self._round_label)
+        timer_group.add(self._round_label)
 
         self._phase_label = Gtk.Label(label="")
         self._phase_label.add_css_class("heading")
-        main_box.append(self._phase_label)
+        timer_group.add(self._phase_label)
 
         self._countdown_label = Gtk.Label(label="00:00")
         self._countdown_label.set_vexpand(True)
         self._countdown_label.set_valign(Gtk.Align.CENTER)
-        main_box.append(self._countdown_label)
+        timer_group.add(self._countdown_label)
+
+        main_box.append(timer_group)
 
         btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12, halign=Gtk.Align.CENTER)
         btn_box.set_margin_bottom(12)
@@ -57,11 +65,11 @@ class RoundTimerPage(Adw.Bin):
         self._start_btn.connect("clicked", self._on_start_clicked)
         btn_box.append(self._start_btn)
 
-        self._pause_btn = Gtk.Button(label="Pause", sensitive=False)
+        self._pause_btn = Gtk.Button(label="Pause", sensitive=False, css_classes=["flat"])
         self._pause_btn.connect("clicked", self._on_pause_clicked)
         btn_box.append(self._pause_btn)
 
-        self._reset_btn = Gtk.Button(label="Reset", sensitive=False)
+        self._reset_btn = Gtk.Button(label="Reset", sensitive=False, css_classes=["flat"])
         self._reset_btn.connect("clicked", self._on_reset_clicked)
         btn_box.append(self._reset_btn)
 
@@ -71,6 +79,11 @@ class RoundTimerPage(Adw.Bin):
 
         main_box.append(btn_box)
         self.set_child(main_box)
+
+        self._focus.set_widgets([
+            self._rounds_spin, self._round_time_spin, self._pause_time_spin,
+            self._start_btn, self._pause_btn, self._reset_btn, self._skip_btn,
+        ])
 
         self.connect("realize", self._on_realize)
 
@@ -217,48 +230,40 @@ class RoundTimerPage(Adw.Bin):
         self._round_time_spin.set_sensitive(not running and self._current_round == 0)
         self._pause_time_spin.set_sensitive(not running and self._current_round == 0)
 
+        widgets = []
+        for w in [self._rounds_spin, self._round_time_spin, self._pause_time_spin,
+                  self._start_btn, self._pause_btn, self._reset_btn, self._skip_btn]:
+            if w.get_sensitive():
+                widgets.append(w)
+        self._focus.set_widgets(widgets)
+
     # ---- Controller API ---------------------------------------------------
 
     def get_controller_context(self):
         return "timer"
 
-    def _focus_cycle_widgets(self):
-        return [self._rounds_spin, self._round_time_spin, self._pause_time_spin,
-                self._start_btn, self._pause_btn, self._reset_btn, self._skip_btn]
-
-    def _focus_cycle(self, delta):
-        widgets = self._focus_cycle_widgets()
-        if not widgets:
-            return
-        idx = getattr(self, '_controller_focus_idx', -1)
-        old = widgets[idx] if 0 <= idx < len(widgets) else None
-        next_idx = (idx + delta) % len(widgets)
-        self._controller_focus_idx = next_idx
-        if old is not None and old is not widgets[next_idx]:
-            old.remove_css_class("controller-focus")
-        widgets[next_idx].add_css_class("controller-focus")
-        widgets[next_idx].grab_focus()
-
     def controller_dpad_up(self):
-        self._focus_cycle(-1)
+        self._focus.cycle(-1)
 
     def controller_dpad_down(self):
-        self._focus_cycle(1)
+        self._focus.cycle(1)
 
     def controller_dpad_left(self):
-        self._adjust_focused(-1)
+        widget = self._focus.current_widget()
+        if isinstance(widget, Adw.SpinRow):
+            widget.set_value(widget.get_value() + widget.get_adjustment().get_step_increment() * -1)
 
     def controller_dpad_right(self):
-        self._adjust_focused(1)
-
-    def _adjust_focused(self, delta):
-        widgets = self._focus_cycle_widgets()
-        idx = getattr(self, '_controller_focus_idx', -1)
-        if not (0 <= idx < len(widgets)):
-            return
-        widget = widgets[idx]
+        widget = self._focus.current_widget()
         if isinstance(widget, Adw.SpinRow):
-            widget.set_value(widget.get_value() + widget.get_adjustment().get_step_increment() * delta)
+            widget.set_value(widget.get_value() + widget.get_adjustment().get_step_increment() * 1)
+        elif isinstance(widget, Gtk.Button):
+            current = self._focus.current_widget()
+            buttons = [self._start_btn, self._pause_btn, self._reset_btn, self._skip_btn]
+            if current in buttons:
+                idx = buttons.index(current)
+                idx = (idx + 1) % len(buttons)
+                self._focus.move_to_widget(buttons[idx])
 
     def controller_start(self):
         if self._timer.is_running:
