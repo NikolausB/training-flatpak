@@ -61,6 +61,7 @@ class TrainingPlan:
     total_rounds: int = 1
     rest_between_rounds_seconds: int = 60
     created: datetime = field(default_factory=datetime.now)
+    is_favorite: bool = False
 
     def total_planned_seconds(self) -> int:
         total = 0
@@ -82,6 +83,7 @@ class TrainingPlan:
             "total_rounds": self.total_rounds,
             "rest_between_rounds_seconds": self.rest_between_rounds_seconds,
             "created": self.created.isoformat(),
+            "is_favorite": self.is_favorite,
         }
 
     @classmethod
@@ -93,6 +95,7 @@ class TrainingPlan:
             total_rounds=d.get("total_rounds", 1),
             rest_between_rounds_seconds=d.get("rest_between_rounds_seconds", 60),
             created=datetime.fromisoformat(d["created"]) if "created" in d else datetime.now(),
+            is_favorite=d.get("is_favorite", False),
         )
 
 

@@ -106,12 +106,15 @@ class AICoachPage(Adw.Bin):
 
         self._keyboard = VirtualKeyboard(on_text_typed=self._on_keyboard_typed)
         self._keyboard.set_visible(False)
+        self._keyboard.connect("notify::visible", self._on_keyboard_visibility_changed)
         box.append(self._keyboard)
 
         self._system_prompt.set_focusable(True)
         self._system_prompt.set_can_focus(True)
         self._user_prompt.set_focusable(True)
         self._user_prompt.set_can_focus(True)
+
+        self.connect("map", self._on_page_mapped)
 
         self._result_name_label = Gtk.Label(label="", css_classes=["title-2"])
         self._result_group.add(self._result_name_label)
@@ -136,6 +139,21 @@ class AICoachPage(Adw.Bin):
     def _on_provider_changed(self, combo_row, param):
         idx = combo_row.get_selected()
         self._key_row.set_visible(idx == 1)
+        self._refresh_focus()
+
+    def _on_page_mapped(self, widget):
+        self._refresh_focus()
+        self._focus.focus_first()
+
+    def _on_keyboard_visibility_changed(self, keyboard, param):
+        if not keyboard.get_visible():
+            self._refresh_focus()
+            self._focus.focus_first()
+            self._refresh_hints()
+
+    def on_page_visible(self):
+        self._refresh_focus()
+        self._focus.focus_first()
 
     def _on_generate(self, btn):
         if self._generating:
@@ -344,7 +362,8 @@ class AICoachPage(Adw.Bin):
     def _on_keyboard_typed(self, text):
         buf = self._user_prompt.get_buffer()
         if text == "\b":
-            buf.backspace(buf.get_insert(), True, True)
+            insert_iter = buf.get_iter_at_mark(buf.get_insert())
+            buf.backspace(insert_iter, True, True)
         elif text == "\n":
             buf.insert_at_cursor(text, -1)
         else:
@@ -352,8 +371,13 @@ class AICoachPage(Adw.Bin):
 
     def controller_select(self):
         widget = self._focus.current_widget()
+        if widget is None:
+            self._refresh_focus()
+            self._focus.focus_first()
+            widget = self._focus.current_widget()
         if widget in (self._system_prompt, self._user_prompt):
             self._keyboard.set_visible(True)
+            self._refresh_focus()
             self._refresh_hints()
 
     def get_controller_context(self):
@@ -371,9 +395,8 @@ class AICoachPage(Adw.Bin):
         else:
             widgets.append(self._generate_btn)
             widgets.extend([self._provider_row, self._model_row])
-            if self._url_row.get_sensitive():
+            if self._provider_row.get_selected() == 1:
                 widgets.append(self._url_row)
-            if self._key_row.get_visible() and self._key_row.get_sensitive():
                 widgets.append(self._key_row)
             widgets.extend([self._history_switch, self._system_prompt, self._user_prompt])
         self._focus.set_widgets(widgets)
@@ -385,10 +408,25 @@ class AICoachPage(Adw.Bin):
             self._on_save_plan(None)
         else:
             widget = self._focus.current_widget()
+            if widget is None:
+                self._refresh_focus()
+                self._focus.focus_first()
+                widget = self._focus.current_widget()
             if widget in (self._system_prompt, self._user_prompt):
                 self._keyboard.set_visible(True)
                 self._refresh_focus()
                 self._refresh_hints()
+                return
+            elif isinstance(widget, Adw.ButtonRow):
+                widget.emit("activated")
+            elif isinstance(widget, Gtk.Button):
+                widget.emit("clicked")
+            elif isinstance(widget, Adw.ComboRow):
+                model = widget.get_model()
+                if model:
+                    widget.set_selected((widget.get_selected() + 1) % model.get_n_items())
+            elif isinstance(widget, Adw.SwitchRow):
+                widget.set_active(not widget.get_active())
             else:
                 self._on_generate(None)
 

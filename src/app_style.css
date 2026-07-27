@@ -28,3 +28,31 @@
     padding: 10px 16px;
     border-radius: 20px;
 }
+
+/* Virtual keyboard key styling */
+.keyboard-key {
+    min-width: 36px;
+    min-height: 40px;
+    padding: 6px 10px;
+    font-weight: 600;
+}
+
+.keyboard-key:focus-visible {
+    outline: 2px solid @accent_bg_color;
+    outline-offset: -2px;
+}
+
+.keyboard-key.selected {
+    background: alpha(@accent_bg_color, 0.35);
+    outline: 2px solid @accent_bg_color;
+    outline-offset: -2px;
+    border-radius: 9px;
+}
+
+.keyboard-key.special {
+    font-weight: 700;
+}
+
+.keyboard-key.space-key {
+    min-width: 160px;
+}

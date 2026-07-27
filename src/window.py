@@ -388,6 +388,10 @@ class MainWindow(Adw.ApplicationWindow):
             self._history.refresh()
         elif child == self._home:
             self._home.refresh()
+        elif child == self._training_plan:
+            self._training_plan.on_page_visible()
+        elif child == self._ai_coach:
+            self._ai_coach.on_page_visible()
 
         self._on_window_state_changed()
         self._update_hints_visibility()
@@ -402,3 +406,4 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_dialog_closed(self):
         self._open_dialog = None
         self._rebuild_tabs()
+        self._update_hints_visibility()

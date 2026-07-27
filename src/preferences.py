@@ -43,6 +43,11 @@ class PreferencesDialog(Adw.Dialog):
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
+
+        save_btn = Gtk.Button(label="Save", css_classes=["suggested-action"])
+        save_btn.connect("clicked", self._on_save_clicked)
+        header.pack_end(save_btn)
+
         toolbar.add_top_bar(header)
 
         self._page = Adw.PreferencesPage()
@@ -56,6 +61,7 @@ class PreferencesDialog(Adw.Dialog):
         self.set_child(toolbar)
 
         self.connect("realize", self._on_realize)
+        self.connect("closed", self._on_save_clicked)
 
     def _build_sound_group(self):
         group = Adw.PreferencesGroup(title="Sounds")
@@ -132,7 +138,7 @@ class PreferencesDialog(Adw.Dialog):
         self._page.add(group)
 
     def _build_controller_group(self):
-        group = Adw.PreferencesGroup(title="Controller & Deck Mode")
+        group = Adw.PreferencesGroup(title="Controller and Deck Mode")
         group.set_description("Settings for gamepad and Steam Deck compatibility")
 
         self._gamepad_switch = Adw.SwitchRow(
@@ -211,7 +217,7 @@ class PreferencesDialog(Adw.Dialog):
             return
         sound_player.play_sound(key)
 
-    def _on_save_clicked(self):
+    def _on_save_clicked(self, *args):
         global_settings = app_settings
         global_settings.sound_enabled = self._settings.sound_enabled
         for event_key in _EVENT_LABELS:

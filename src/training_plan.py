@@ -59,15 +59,7 @@ class TrainingPlanPage(Adw.Bin):
         new_btn = Gtk.Button(label="New Plan", css_classes=["suggested-action"], halign=Gtk.Align.START)
         new_btn.connect("clicked", self._on_new_plan)
         box.append(new_btn)
-
-        io_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, halign=Gtk.Align.START)
-        self._export_btn = Gtk.Button(label="Export", halign=Gtk.Align.START)
-        self._export_btn.connect("clicked", lambda _: self._on_export_plans())
-        io_box.append(self._export_btn)
-        self._import_btn = Gtk.Button(label="Import", halign=Gtk.Align.START)
-        self._import_btn.connect("clicked", lambda _: self._on_import_plans())
-        io_box.append(self._import_btn)
-        box.append(io_box)
+        self._new_plan_btn = new_btn
 
         self._list_stack = Gtk.Stack(vhomogeneous=True)
         self._list_stack.set_vexpand(True)
@@ -84,6 +76,17 @@ class TrainingPlanPage(Adw.Bin):
         self._list_stack.add_named(empty_label, "empty")
 
         box.append(self._list_stack)
+
+        self._plan_row_star_buttons: dict[str, Gtk.Button] = {}
+
+        io_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, halign=Gtk.Align.START)
+        self._export_btn = Gtk.Button(label="Export", halign=Gtk.Align.START)
+        self._export_btn.connect("clicked", lambda _: self._on_export_plans())
+        io_box.append(self._export_btn)
+        self._import_btn = Gtk.Button(label="Import", halign=Gtk.Align.START)
+        self._import_btn.connect("clicked", lambda _: self._on_import_plans())
+        io_box.append(self._import_btn)
+        box.append(io_box)
 
         self._list_page = Adw.NavigationPage(title="Training Plans")
         self._list_page.set_child(box)
@@ -115,6 +118,13 @@ class TrainingPlanPage(Adw.Bin):
         name_group = Adw.PreferencesGroup()
         name_group.add(self._plan_name_entry)
 
+        self._favorite_switch = Adw.SwitchRow(
+            title="Favorite",
+            subtitle="Show this plan at the top of the list",
+        )
+        self._favorite_switch.connect("notify::active", self._on_favorite_switch_changed)
+        name_group.add(self._favorite_switch)
+
         rounds_adj = Gtk.Adjustment(value=1, lower=1, upper=20, step_increment=1)
         self._total_rounds_spin = Adw.SpinRow(title="Total Rounds", subtitle="How many times to repeat all exercises", adjustment=rounds_adj)
         name_group.add(self._total_rounds_spin)
@@ -139,15 +149,22 @@ class TrainingPlanPage(Adw.Bin):
         box.append(self._exercises_group)
 
         actions_group = Adw.PreferencesGroup()
-        self._editor_delete_btn = Adw.ButtonRow(title="Delete Plan", css_classes=["destructive-action"])
-        self._editor_delete_btn.connect("activated", self._on_delete_plan)
-        actions_group.add(self._editor_delete_btn)
-        box.append(actions_group)
 
-        run_btn = Adw.ButtonRow(title="Start Training", css_classes=["suggested-action"])
+        run_btn = Adw.ButtonRow(title="Start Training")
         run_btn.connect("activated", self._on_run_plan)
+        run_btn.add_css_class("suggested-action")
         actions_group.add(run_btn)
         self._editor_run_btn = run_btn
+
+        save_row = Adw.ButtonRow(title="Save Plan")
+        save_row.connect("activated", self._on_save_plan)
+        actions_group.add(save_row)
+        self._editor_save_row = save_row
+
+        self._editor_delete_btn = Adw.ButtonRow(title="Delete Plan", css_classes=["destructive-action"])
+        self._editor_delete_btn.connect("activated", self._on_confirm_delete_plan)
+        actions_group.add(self._editor_delete_btn)
+        box.append(actions_group)
 
         clamp.set_child(box)
         scrolled.set_child(clamp)
@@ -287,8 +304,27 @@ class TrainingPlanPage(Adw.Bin):
         visible_page = nav.get_visible_page()
         if visible_page == self._list_page:
             self.refresh_plans()
-            self._list_focus.focus_first()
+            self._focus_list_if_visible()
         self._refresh_hints()
+
+    def _focus_list_if_visible(self):
+        visible = self._nav.get_visible_page()
+        if visible != self._list_page:
+            return
+        widgets = [self._new_plan_btn]
+        if self._plans:
+            for i in range(len(self._plans)):
+                row = self._plan_list_box.get_row_at_index(i)
+                if row is not None:
+                    widgets.append(row)
+        widgets.extend([self._export_btn, self._import_btn])
+        self._list_focus.set_widgets(widgets)
+        self._list_focus.focus_first()
+
+    def on_page_visible(self):
+        visible = self._nav.get_visible_page()
+        if visible == self._list_page:
+            self._focus_list_if_visible()
 
     # ---- Summary population ----------------------------------------------
 
@@ -380,6 +416,7 @@ class TrainingPlanPage(Adw.Bin):
         if plan:
             self._editing_plan_id = plan.id
             self._plan_name_entry.set_text(plan.name)
+            self._favorite_switch.set_active(plan.is_favorite)
             self._total_rounds_spin.set_value(plan.total_rounds)
             self._rest_between_rounds_spin.set_value(plan.rest_between_rounds_seconds)
             self._editor_exercises = [Exercise.from_dict(e.to_dict()) for e in plan.exercises]
@@ -387,6 +424,7 @@ class TrainingPlanPage(Adw.Bin):
         else:
             self._editing_plan_id = None
             self._plan_name_entry.set_text("")
+            self._favorite_switch.set_active(False)
             self._total_rounds_spin.set_value(1)
             self._rest_between_rounds_spin.set_value(60)
             self._editor_page.set_title("New Plan")
@@ -397,6 +435,13 @@ class TrainingPlanPage(Adw.Bin):
         self._nav.push(self._editor_page)
         self._refresh_editor_focus()
         self._editor_focus.focus_first()
+
+    def _on_favorite_switch_changed(self, switch, param):
+        if self._editing_plan_id:
+            plan = self._store.get_plan(self._editing_plan_id)
+            if plan and plan.is_favorite != switch.get_active():
+                plan.is_favorite = switch.get_active()
+                self._store.save_plan(plan)
 
     def _append_exercise_row(self, exercise: Exercise):
         row = Adw.ExpanderRow(title=self._exercise_display_title(exercise))
@@ -595,10 +640,13 @@ class TrainingPlanPage(Adw.Bin):
             self._plan_list_box.remove(row)
             row = self._plan_list_box.get_row_at_index(0)
 
+        self._plan_row_star_buttons.clear()
         self._plans = self._store.load_plans()
+        self._plans.sort(key=lambda p: (-int(p.is_favorite), p.name.lower()))
 
         if not self._plans:
             self._list_stack.set_visible_child_name("empty")
+            self._focus_list_if_visible()
             return
 
         for plan in self._plans:
@@ -606,9 +654,19 @@ class TrainingPlanPage(Adw.Bin):
             rbr_str = f", {plan.rest_between_rounds_seconds}s rest between rounds" if plan.total_rounds > 1 and plan.rest_between_rounds_seconds > 0 else ""
             row = Adw.ActionRow(title=plan.name, subtitle=f"{len(plan.exercises)} exercises{rounds_str}{rbr_str}")
             row.set_activatable(True)
+
+            icon_name = "starred-symbolic" if plan.is_favorite else "non-starred-symbolic"
+            star_btn = Gtk.Button(icon_name=icon_name, css_classes=["flat"])
+            star_btn.set_tooltip_text("Toggle favorite")
+            star_btn.set_valign(Gtk.Align.CENTER)
+            star_btn.connect("clicked", self._on_toggle_favorite, plan.id)
+            row.add_suffix(star_btn)
+            self._plan_row_star_buttons[plan.id] = star_btn
+
             self._plan_list_box.append(row)
 
         self._list_stack.set_visible_child_name("list")
+        self._focus_list_if_visible()
 
     def _on_plan_activated(self, list_box, row):
         idx = row.get_index()
@@ -620,6 +678,14 @@ class TrainingPlanPage(Adw.Bin):
 
     def _on_new_plan(self, btn):
         self._show_editor(None)
+
+    def _on_toggle_favorite(self, btn, plan_id: str):
+        plan = self._store.get_plan(plan_id)
+        if plan is None:
+            return
+        plan.is_favorite = not plan.is_favorite
+        self._store.save_plan(plan)
+        self.refresh_plans()
 
     def _on_export_plans(self):
         from csv_io import export_plans_json
@@ -715,16 +781,37 @@ class TrainingPlanPage(Adw.Bin):
             plan = self._store.get_plan(self._editing_plan_id)
             if plan:
                 plan.name = name
+                plan.is_favorite = self._favorite_switch.get_active()
                 plan.exercises = [e for e in self._editor_exercises if e.name.strip()]
                 plan.total_rounds = int(self._total_rounds_spin.get_value())
                 plan.rest_between_rounds_seconds = int(self._rest_between_rounds_spin.get_value())
                 self._store.save_plan(plan)
         else:
-            plan = TrainingPlan(name=name, exercises=[e for e in self._editor_exercises if e.name.strip()], total_rounds=int(self._total_rounds_spin.get_value()), rest_between_rounds_seconds=int(self._rest_between_rounds_spin.get_value()))
+            plan = TrainingPlan(name=name, exercises=[e for e in self._editor_exercises if e.name.strip()], total_rounds=int(self._total_rounds_spin.get_value()), rest_between_rounds_seconds=int(self._rest_between_rounds_spin.get_value()), is_favorite=self._favorite_switch.get_active())
             self._store.save_plan(plan)
             self._editing_plan_id = plan.id
 
-    def _on_delete_plan(self, btn):
+    def _on_confirm_delete_plan(self, btn):
+        if not self._editing_plan_id:
+            return
+        dialog = Adw.AlertDialog(
+            heading="Delete Plan?",
+            body="This action cannot be undone."
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("delete", "Delete")
+        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+
+        def on_response(dialog, response):
+            if response == "delete":
+                self._on_delete_plan()
+
+        dialog.connect("response", on_response)
+        self.get_native()._register_controller_dialog(dialog, "delete", "cancel")
+        dialog.present(self.get_native())
+
+    def _on_delete_plan(self):
         if self._editing_plan_id:
             self._store.delete_plan(self._editing_plan_id)
             self._editing_plan_id = None
@@ -1094,10 +1181,20 @@ class TrainingPlanPage(Adw.Bin):
             self._show_list()
         elif visible == self._list_page:
             widget = self._list_focus.current_widget()
+            if widget is None:
+                self._focus_list_if_visible()
+                widget = self._list_focus.current_widget()
             if widget is not None:
-                idx = widget.get_index()
-                if 0 <= idx < len(self._plans):
-                    self._show_editor(self._plans[idx])
+                if widget == self._new_plan_btn:
+                    widget.emit("clicked")
+                elif widget == self._export_btn:
+                    widget.emit("clicked")
+                elif widget == self._import_btn:
+                    widget.emit("clicked")
+                else:
+                    idx = widget.get_index()
+                    if 0 <= idx < len(self._plans):
+                        self._show_editor(self._plans[idx])
         elif visible == self._editor_page:
             widget = self._editor_focus.current_widget()
             if isinstance(widget, Adw.ExpanderRow):
@@ -1131,14 +1228,14 @@ class TrainingPlanPage(Adw.Bin):
         self.controller_b()
 
     def _refresh_editor_focus(self):
-        widgets = [self._plan_name_entry, self._total_rounds_spin, self._rest_between_rounds_spin,
+        widgets = [self._plan_name_entry, self._favorite_switch, self._total_rounds_spin, self._rest_between_rounds_spin,
                    self._editor_add_exercise_btn, self._editor_browse_exercise_btn]
         for row in self._exercise_rows:
             widgets.append(row)
             if row.get_expanded():
                 for child in getattr(row, '_child_widgets', []):
                     widgets.append(child)
-        widgets.extend([self._editor_save_btn, self._editor_delete_btn, self._editor_run_btn])
+        widgets.extend([self._editor_save_row, self._editor_delete_btn, self._editor_run_btn])
         self._editor_focus.set_widgets(widgets)
 
     def controller_dpad_up(self):
@@ -1184,7 +1281,8 @@ class TrainingPlanPage(Adw.Bin):
         adjust_focused_widget(widget, 1)
 
     def controller_x(self):
-        if self._nav.get_visible_page() == self._editor_page:
+        visible = self._nav.get_visible_page()
+        if visible == self._editor_page:
             widget = self._editor_focus.current_widget()
             if isinstance(widget, Adw.ExpanderRow):
                 widget.set_expanded(not widget.get_expanded())
@@ -1192,3 +1290,12 @@ class TrainingPlanPage(Adw.Bin):
                 parent = widget.get_ancestor(Adw.ExpanderRow) if widget else None
                 if parent is not None:
                     parent.set_expanded(False)
+        elif visible == self._list_page:
+            widget = self._list_focus.current_widget()
+            if isinstance(widget, Adw.ActionRow):
+                idx = widget.get_index()
+                if 0 <= idx < len(self._plans):
+                    plan = self._plans[idx]
+                    star_btn = self._plan_row_star_buttons.get(plan.id)
+                    if star_btn is not None:
+                        star_btn.emit("clicked")

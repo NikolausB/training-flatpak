@@ -9,10 +9,10 @@ _CONTEXT_HINTS = {
     },
     "runner_summary":  "[A] Back to Menu  [Guide] Fullscreen",
     "timer":           "[A] Start  [Start] Pause  [B] Skip  [X] Reset  [L1/R1] Tabs  [Guide] Fullscreen",
-    "list":            "[A] Open  [B] Back  [L1/R1] Tabs  [Guide] Fullscreen",
+    "list":            "[A] Open  [X] Favorite  [B] Back  [L1/R1] Tabs  [Guide] Fullscreen",
     "editor":          "[A] Enter  [B] Back  [←/→] Adjust  [X] Toggle  [Start] Start Training  [L1/R1] Tabs  [Guide] Fullscreen",
     "ai_coach":        "[A] Submit  [B] Back  [←/→] Toggle  [Select] Keyboard  [L1/R1] Tabs  [Guide] Fullscreen",
-    "keyboard":        "[A] Type  [B] Backspace  [Y] Shift  [L/R] Cursor  [Start] Close",
+    "keyboard":        "[A] Type  [B] Backspace  [Y] Shift  [←/→] Move  [Start] Close",
 }
 
 
