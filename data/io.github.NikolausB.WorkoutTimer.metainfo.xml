@@ -18,11 +18,10 @@
       <li>Training plan builder with timed and rep-based exercises</li>
       <li>Multi-round circuits with configurable rest between rounds</li>
       <li>AI coach for generating training plans with local or cloud LLMs</li>
-      <li>Built-in exercise database with 873 exercises and images</li>
+      <li>Built-in exercise database with 873 exercises</li>
       <li>11 pre-built default training plans, including pop culture-inspired workouts</li>
       <li>Training history with per-exercise logging and CSV export/import</li>
       <li>Customizable sound effects for different events</li>
-      <li>Fullscreen mode for workout sessions</li>
     </ul>
   </description>
   <developer id="io.github.nikolausb">
@@ -92,6 +91,25 @@
     <keyword>ai</keyword>
   </keywords>
   <releases>
+    <release version="1.2.0" date="2026-07-27">
+      <description>
+        <p>Favorite plans, improved editor UX, persistent preferences, better virtual keyboard, richer history logging, and a tristate color scheme.</p>
+        <ul>
+          <li>Mark training plans as favorites; favorited plans are pinned to the top of the list</li>
+          <li>Reorder editor actions so Start Training is the primary button</li>
+          <li>Add delete confirmation in the plan editor</li>
+          <li>Add Save button to Preferences and persist changes on close</li>
+          <li>Fix Controller &amp; Deck Mode markup warning</li>
+          <li>Rewrite virtual keyboard with focusable keys, Backspace, Enter, Close, and Shift</li>
+          <li>Improve controller navigation for Training Plans and AI Coach</li>
+          <li>Log exercise start and finish timestamps in training history and CSV export</li>
+          <li>Add per-exercise set numbers and repeat exercises according to their configured sets</li>
+          <li>Add Color Scheme preference (Follow System / Light / Dark) applied immediately</li>
+          <li>Remove exercise image display from the UI; images are still preserved in exported data for compatibility</li>
+        </ul>
+        <p>Exercise images are planned to be replaced with GIFs or short videos in a future release.</p>
+      </description>
+    </release>
     <release version="1.1.6" date="2026-05-11">
       <description>
         <p>Steam Deck scaling fix: bottom controls and controller hints no longer cut off after switching tabs.</p>
