@@ -36,7 +36,7 @@ class PreferencesDialog(Adw.Dialog):
         super().__init__(**kwargs)
         self.set_title("Preferences")
         self.set_content_width(420)
-        self.set_content_height(560)
+        self.set_content_height(620)
 
         self._settings = AppSettings(**app_settings.to_dict())
         self._focus_tracker = _DialogFocusTracker()
@@ -51,6 +51,7 @@ class PreferencesDialog(Adw.Dialog):
         toolbar.add_top_bar(header)
 
         self._page = Adw.PreferencesPage()
+        self._build_appearance_group()
         self._build_sound_group()
         self._build_tabs_group()
         self._build_controller_group()
@@ -62,6 +63,23 @@ class PreferencesDialog(Adw.Dialog):
 
         self.connect("realize", self._on_realize)
         self.connect("closed", self._on_save_clicked)
+
+    def _build_appearance_group(self):
+        group = Adw.PreferencesGroup(title="Appearance")
+        group.set_description("Application look and feel")
+
+        self._color_scheme_combo = Adw.ComboRow(
+            title="Color Scheme",
+            subtitle="Follow the system or force light/dark appearance",
+        )
+        color_items = Gtk.StringList.new(["Follow System", "Light", "Dark"])
+        self._color_scheme_combo.set_model(color_items)
+        idx = {"default": 0, "light": 1, "dark": 2}.get(self._settings.color_scheme, 0)
+        self._color_scheme_combo.set_selected(idx)
+        self._color_scheme_combo.connect("notify::selected", self._on_color_scheme_changed)
+        group.add(self._color_scheme_combo)
+
+        self._page.add(group)
 
     def _build_sound_group(self):
         group = Adw.PreferencesGroup(title="Sounds")
@@ -182,6 +200,7 @@ class PreferencesDialog(Adw.Dialog):
             self._gamepad_switch,
             self._hints_switch,
             self._deck_combo,
+            self._color_scheme_combo,
         ])
         self._focus_tracker.set_widgets(widgets)
 
@@ -230,8 +249,25 @@ class PreferencesDialog(Adw.Dialog):
         global_settings.gamepad_hints = self._hints_switch.get_active()
         deck_idx = self._deck_combo.get_selected()
         global_settings.deck_mode = ["auto", "on", "off"][deck_idx]
+        color_idx = self._color_scheme_combo.get_selected()
+        global_settings.color_scheme = ["default", "light", "dark"][color_idx]
         save_settings(global_settings)
+        self._apply_color_scheme()
         self.close()
+
+    def _on_color_scheme_changed(self, combo_row, param):
+        idx = combo_row.get_selected()
+        self._settings.color_scheme = ["default", "light", "dark"][idx]
+        self._apply_color_scheme()
+
+    def _apply_color_scheme(self):
+        style_manager = Adw.StyleManager.get_default()
+        scheme_map = {
+            "default": Adw.ColorScheme.DEFAULT,
+            "light": Adw.ColorScheme.FORCE_LIGHT,
+            "dark": Adw.ColorScheme.FORCE_DARK,
+        }
+        style_manager.set_color_scheme(scheme_map.get(self._settings.color_scheme, Adw.ColorScheme.DEFAULT))
 
     # ---- Controller API ---------------------------------------------------
 

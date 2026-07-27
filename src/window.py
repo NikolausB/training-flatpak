@@ -23,6 +23,10 @@ class MainWindow(Adw.ApplicationWindow):
         self.set_title("Training")
         self.set_default_size(600, 700)
 
+        self._controller = None
+        self._open_dialog = None
+        self._resize_timeout_id = 0
+
         self._store = DataStore()
         self._store.seed_default_plans()
 
@@ -80,9 +84,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.connect("notify::default-width", self._on_window_state_changed)
         self.connect("notify::default-height", self._on_window_state_changed)
 
-        self._controller = None
-        self._open_dialog = None
-        self._resize_timeout_id = 0
+        self._apply_color_scheme()
 
     # ---------- Controller Handling ----------
 
@@ -95,6 +97,16 @@ class MainWindow(Adw.ApplicationWindow):
         if mode == "off":
             return False
         return self._controller.deck_mode
+
+    def _apply_color_scheme(self):
+        from gi.repository import Adw
+        style_manager = Adw.StyleManager.get_default()
+        scheme_map = {
+            "default": Adw.ColorScheme.DEFAULT,
+            "light": Adw.ColorScheme.FORCE_LIGHT,
+            "dark": Adw.ColorScheme.FORCE_DARK,
+        }
+        style_manager.set_color_scheme(scheme_map.get(app_settings.color_scheme, Adw.ColorScheme.DEFAULT))
 
     def _apply_app_css(self):
         display = Gdk.Display.get_default()
