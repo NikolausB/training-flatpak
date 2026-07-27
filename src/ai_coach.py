@@ -4,6 +4,7 @@ from gi.repository import Adw, Gtk, GLib
 from data_store import DataStore
 from models import TrainingPlan, Exercise
 from settings import app_settings
+from controller_focus import ControllerFocusTracker, adjust_focused_widget
 from llm_client import chat_completion, build_history_context, parse_plan_response, DEFAULT_SYSTEM_PROMPT, LLMError
 from image_utils import load_all_exercises
 from virtual_keyboard import VirtualKeyboard
@@ -16,19 +17,20 @@ class AICoachPage(Adw.Bin):
         self._on_plan_saved = on_plan_saved
         self._generated_plan: TrainingPlan | None = None
         self._generating = False
+        self._focus = ControllerFocusTracker()
         self._build_ui()
 
     def _build_ui(self):
         scrolled = Gtk.ScrolledWindow(vexpand=True)
         clamp = Adw.Clamp()
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        box.set_margin_top(24)
-        box.set_margin_bottom(24)
-        box.set_margin_start(24)
-        box.set_margin_end(24)
+        box.set_margin_top(12)
+        box.set_margin_bottom(12)
+        box.set_margin_start(12)
+        box.set_margin_end(12)
 
         provider_group = Adw.PreferencesGroup(title="Provider")
-        provider_group.set_description("Configure your LLM provider (Ollama, OpenAI, etc.)")
+        provider_group.set_description("Configure your LLM provider")
 
         self._provider_row = Adw.ComboRow(title="Provider", subtitle="Select your LLM backend")
         provider_model = Gtk.StringList.new(["Ollama (local)", "OpenAI-compatible"])
@@ -51,12 +53,12 @@ class AICoachPage(Adw.Bin):
         self._key_row = Adw.PasswordEntryRow(title="API Key")
         self._key_row.set_text(app_settings.ai_api_key)
         provider_group.add(self._key_row)
-
         self._key_row.set_visible(app_settings.ai_provider == "openai_compatible")
 
         box.append(provider_group)
 
         prompt_group = Adw.PreferencesGroup(title="Prompts")
+        prompt_group.set_description("Describe the training plan you want")
 
         self._history_switch = Adw.SwitchRow(
             title="Include Training History",
@@ -64,10 +66,6 @@ class AICoachPage(Adw.Bin):
         )
         self._history_switch.set_active(app_settings.ai_include_history)
         prompt_group.add(self._history_switch)
-
-        sys_label = Gtk.Label(label="System Prompt", css_classes=["heading"], halign=Gtk.Align.START)
-        sys_label.set_margin_top(6)
-        prompt_group.add(sys_label)
 
         self._system_prompt = Gtk.TextView()
         self._system_prompt.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
@@ -80,10 +78,6 @@ class AICoachPage(Adw.Bin):
         sys_frame.set_child(sys_scroll)
         prompt_group.add(sys_frame)
 
-        user_label = Gtk.Label(label="Your Request", css_classes=["heading"], halign=Gtk.Align.START)
-        user_label.set_margin_top(6)
-        prompt_group.add(user_label)
-
         self._user_prompt = Gtk.TextView()
         self._user_prompt.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self._user_prompt.get_buffer().set_text("")
@@ -95,9 +89,11 @@ class AICoachPage(Adw.Bin):
 
         box.append(prompt_group)
 
-        self._generate_btn = Gtk.Button(label="Generate Plan", css_classes=["suggested-action"], halign=Gtk.Align.CENTER)
-        self._generate_btn.connect("clicked", self._on_generate)
-        box.append(self._generate_btn)
+        action_group = Adw.PreferencesGroup()
+        self._generate_btn = Adw.ButtonRow(title="Generate Plan", css_classes=["suggested-action"])
+        self._generate_btn.connect("activated", self._on_generate)
+        action_group.add(self._generate_btn)
+        box.append(action_group)
 
         self._spinner = Gtk.Spinner(halign=Gtk.Align.CENTER, visible=False)
         box.append(self._spinner)
@@ -110,7 +106,15 @@ class AICoachPage(Adw.Bin):
 
         self._keyboard = VirtualKeyboard(on_text_typed=self._on_keyboard_typed)
         self._keyboard.set_visible(False)
+        self._keyboard.connect("notify::visible", self._on_keyboard_visibility_changed)
         box.append(self._keyboard)
+
+        self._system_prompt.set_focusable(True)
+        self._system_prompt.set_can_focus(True)
+        self._user_prompt.set_focusable(True)
+        self._user_prompt.set_can_focus(True)
+
+        self.connect("map", self._on_page_mapped)
 
         self._result_name_label = Gtk.Label(label="", css_classes=["title-2"])
         self._result_group.add(self._result_name_label)
@@ -118,14 +122,15 @@ class AICoachPage(Adw.Bin):
         self._result_rows_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self._result_group.add(self._result_rows_box)
 
-        result_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12, halign=Gtk.Align.CENTER)
-        self._save_btn = Gtk.Button(label="Save Plan", css_classes=["suggested-action"])
-        self._save_btn.connect("clicked", self._on_save_plan)
-        result_btn_box.append(self._save_btn)
-        self._regen_btn = Gtk.Button(label="Regenerate")
-        self._regen_btn.connect("clicked", self._on_generate)
-        result_btn_box.append(self._regen_btn)
-        self._result_group.add(result_btn_box)
+        result_action_group = Adw.PreferencesGroup(visible=False)
+        self._result_action_group = result_action_group
+        self._save_btn = Adw.ButtonRow(title="Save Plan", css_classes=["suggested-action"])
+        self._save_btn.connect("activated", self._on_save_plan)
+        result_action_group.add(self._save_btn)
+        self._regen_btn = Adw.ButtonRow(title="Regenerate")
+        self._regen_btn.connect("activated", self._on_generate)
+        result_action_group.add(self._regen_btn)
+        box.append(result_action_group)
 
         clamp.set_child(box)
         scrolled.set_child(clamp)
@@ -134,6 +139,21 @@ class AICoachPage(Adw.Bin):
     def _on_provider_changed(self, combo_row, param):
         idx = combo_row.get_selected()
         self._key_row.set_visible(idx == 1)
+        self._refresh_focus()
+
+    def _on_page_mapped(self, widget):
+        self._refresh_focus()
+        self._focus.focus_first()
+
+    def _on_keyboard_visibility_changed(self, keyboard, param):
+        if not keyboard.get_visible():
+            self._refresh_focus()
+            self._focus.focus_first()
+            self._refresh_hints()
+
+    def on_page_visible(self):
+        self._refresh_focus()
+        self._focus.focus_first()
 
     def _on_generate(self, btn):
         if self._generating:
@@ -152,6 +172,7 @@ class AICoachPage(Adw.Bin):
         self._spinner.start()
         self._error_label.set_visible(False)
         self._result_group.set_visible(False)
+        self._result_action_group.set_visible(False)
 
         idx = self._provider_row.get_selected()
         provider = "ollama" if idx == 0 else "openai_compatible"
@@ -240,14 +261,12 @@ class AICoachPage(Adw.Bin):
                     except (ValueError, TypeError):
                         weight_kg = None
 
-                image_key = self._match_exercise_image(ex_name, name_to_key)
                 exercises.append(Exercise(
                     name=ex_name,
                     duration_seconds=dur,
                     reps=reps,
                     weight_kg=weight_kg,
                     rest_seconds=rest,
-                    image_path=image_key,
                 ))
 
             if not exercises:
@@ -307,6 +326,8 @@ class AICoachPage(Adw.Bin):
             self._result_rows_box.append(row)
 
         self._result_group.set_visible(True)
+        self._result_action_group.set_visible(True)
+        self._refresh_focus()
 
     def _on_generate_error(self, error_msg: str):
         self._generating = False
@@ -321,6 +342,8 @@ class AICoachPage(Adw.Bin):
             self._store.save_plan(self._generated_plan)
             self._generated_plan = None
             self._result_group.set_visible(False)
+            self._result_action_group.set_visible(False)
+            self._refresh_focus()
             if self._on_plan_saved:
                 self._on_plan_saved()
 
@@ -339,49 +362,44 @@ class AICoachPage(Adw.Bin):
     def _on_keyboard_typed(self, text):
         buf = self._user_prompt.get_buffer()
         if text == "\b":
-            buf.backspace(buf.get_insert(), True, True)
+            insert_iter = buf.get_iter_at_mark(buf.get_insert())
+            buf.backspace(insert_iter, True, True)
         elif text == "\n":
             buf.insert_at_cursor(text, -1)
         else:
             buf.insert_at_cursor(text, -1)
 
     def controller_select(self):
-        self._keyboard.set_visible(True)
+        widget = self._focus.current_widget()
+        if widget is None:
+            self._refresh_focus()
+            self._focus.focus_first()
+            widget = self._focus.current_widget()
+        if widget in (self._system_prompt, self._user_prompt):
+            self._keyboard.set_visible(True)
+            self._refresh_focus()
+            self._refresh_hints()
 
     def get_controller_context(self):
         if self._keyboard.get_visible():
             return "keyboard"
         return "ai_coach"
 
-    def _focusable_widgets(self):
+    def _refresh_focus(self):
         if self._keyboard.get_visible():
-            return []
+            self._focus.set_widgets([])
+            return
         widgets = []
         if self._result_group.get_visible():
-            widgets.append(self._save_btn)
-            return widgets
-        widgets.append(self._generate_btn)
-        widgets.append(self._provider_row)
-        widgets.append(self._model_row)
-        if self._url_row.get_sensitive():
-            widgets.append(self._url_row)
-        if self._key_row.get_visible() and self._key_row.get_sensitive():
-            widgets.append(self._key_row)
-        widgets.append(self._history_switch)
-        return widgets
-
-    def _focus_cycle(self, delta):
-        widgets = self._focusable_widgets()
-        if not widgets:
-            return
-        idx = getattr(self, '_controller_focus_idx', -1)
-        old = widgets[idx] if 0 <= idx < len(widgets) else None
-        next_idx = (idx + delta) % len(widgets)
-        self._controller_focus_idx = next_idx
-        if old is not None and old is not widgets[next_idx]:
-            old.remove_css_class("controller-focus")
-        widgets[next_idx].add_css_class("controller-focus")
-        widgets[next_idx].grab_focus()
+            widgets.extend([self._save_btn, self._regen_btn])
+        else:
+            widgets.append(self._generate_btn)
+            widgets.extend([self._provider_row, self._model_row])
+            if self._provider_row.get_selected() == 1:
+                widgets.append(self._url_row)
+                widgets.append(self._key_row)
+            widgets.extend([self._history_switch, self._system_prompt, self._user_prompt])
+        self._focus.set_widgets(widgets)
 
     def controller_a(self):
         if self._keyboard.get_visible():
@@ -389,7 +407,28 @@ class AICoachPage(Adw.Bin):
         elif self._result_group.get_visible():
             self._on_save_plan(None)
         else:
-            self._on_generate(None)
+            widget = self._focus.current_widget()
+            if widget is None:
+                self._refresh_focus()
+                self._focus.focus_first()
+                widget = self._focus.current_widget()
+            if widget in (self._system_prompt, self._user_prompt):
+                self._keyboard.set_visible(True)
+                self._refresh_focus()
+                self._refresh_hints()
+                return
+            elif isinstance(widget, Adw.ButtonRow):
+                widget.emit("activated")
+            elif isinstance(widget, Gtk.Button):
+                widget.emit("clicked")
+            elif isinstance(widget, Adw.ComboRow):
+                model = widget.get_model()
+                if model:
+                    widget.set_selected((widget.get_selected() + 1) % model.get_n_items())
+            elif isinstance(widget, Adw.SwitchRow):
+                widget.set_active(not widget.get_active())
+            else:
+                self._on_generate(None)
 
     def controller_b(self):
         if self._keyboard.get_visible():
@@ -402,49 +441,45 @@ class AICoachPage(Adw.Bin):
     def controller_start(self):
         if self._keyboard.get_visible():
             self._keyboard.set_visible(False)
+            self._refresh_focus()
+            self._refresh_hints()
 
     def controller_dpad_up(self):
         if self._keyboard.get_visible():
             self._keyboard.on_dpad("dpad_up")
         else:
-            self._focus_cycle(-1)
+            self._focus.cycle(-1)
 
     def controller_dpad_down(self):
         if self._keyboard.get_visible():
             self._keyboard.on_dpad("dpad_down")
         else:
-            self._focus_cycle(1)
+            self._focus.cycle(1)
 
     def controller_dpad_left(self):
         if self._keyboard.get_visible():
             self._keyboard.on_dpad("dpad_left")
         else:
-            self._adjust_focused(-1)
+            widget = self._focus.current_widget()
+            adjust_focused_widget(widget, -1)
 
     def controller_dpad_right(self):
         if self._keyboard.get_visible():
             self._keyboard.on_dpad("dpad_right")
         else:
-            self._adjust_focused(1)
-
-    def _adjust_focused(self, delta):
-        widgets = self._focusable_widgets()
-        idx = getattr(self, '_controller_focus_idx', -1)
-        if not (0 <= idx < len(widgets)):
-            return
-        widget = widgets[idx]
-        if isinstance(widget, Adw.ComboRow):
-            model = widget.get_model()
-            if model:
-                new_idx = widget.get_selected() + delta
-                if 0 <= new_idx < model.get_n_items():
-                    widget.set_selected(new_idx)
-        elif isinstance(widget, Adw.SwitchRow):
-            widget.set_active(not widget.get_active())
+            widget = self._focus.current_widget()
+            adjust_focused_widget(widget, 1)
 
     def controller_back(self):
         if self._keyboard.get_visible():
             self._keyboard.set_visible(False)
+            self._refresh_focus()
+            self._refresh_hints()
+
+    def _refresh_hints(self):
+        native = self.get_native()
+        if native:
+            native._update_hints_visibility()
 
     def update_fonts(self, width, height):
         pass

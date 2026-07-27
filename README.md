@@ -8,14 +8,14 @@ A sport training application for Linux, built with GTK 4 and libadwaita.
 - **Round Timer** — Configurable rounds, duration, and pause periods with audio alerts
 - **Training Plan Builder** — Create plans with timed and rep-based exercises, multi-round circuits with configurable rest between rounds
 - **AI Coach** — Generate training plans with local LLMs (Ollama) or OpenAI-compatible APIs
-- **Built-in Exercise Database** — 873 exercises with images from [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (Unlicense)
+- **Built-in Exercise Database** — 873 exercises from [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (Unlicense)
 - **11 Default Training Plans** — Including pop culture-inspired plans (Saitama, Demon Slayer Corps, Rocky)
 - **Multi-Round Circuits** — Repeat all exercises for multiple rounds with configurable rest between rounds
-- **Training History** — Per-session detail with per-exercise logging (actual vs planned), CSV export/import
+- **Training History** — Per-session detail with per-exercise logging (actual vs planned, plus start/end times), CSV export/import
 - **Customizable Sounds** — Choose different sounds for round start, round end, exercise complete, round break, and training complete
 - **Fullscreen Mode** — Guide button (controller) or F11 key for distraction-free workouts
 - **Gamepad & Controller Support** — Full controller navigation for Steam Deck and desktop gamepads (Xbox, PlayStation, generic). D-pad focus cycling with visible outline, A/B/X/Y/Start/Select/Guide button mapping, trigger scrolling, and in-workout confirmation dialogs — all controller-navigable
-- **Add Custom Exercises** — Add your own exercises with custom images
+- **Add Custom Exercises** — Add your own exercises to the built-in database
 - **Tab Visibility** — Show or hide tabs (Home, Timer, Training Plans, AI Coach) in Preferences
 
 ## Controller / Gamepad Controls
@@ -23,13 +23,13 @@ A sport training application for Linux, built with GTK 4 and libadwaita.
 | Button | Action |
 |--------|--------|
 | D-pad ↑↓ | Focus cycle through page widgets |
-| D-pad ←→ | Adjust spin rows (values), cycle combo rows (dropdowns), toggle switches |
+| D-pad ←→ | Adjust spin rows, cycle combo rows, toggle switches, navigate button rows |
 | A | Enter / activate focused widget (open plan, expand exercise, click button) |
-| B | Back / close (with confirmation before stopping workouts) |
-| X | Toggle exercise expander (editor), reset timer (timer page) |
+| B | Back / close (with confirmation before stopping workouts), backspace in keyboard |
+| X | Toggle exercise expander (editor), collapse expanded row (editor) |
 | Y | Skip rest (workout runner), toggle shift (virtual keyboard) |
-| Start | Pause / resume workout, start training from editor, close keyboard |
-| Select | Open preferences (most pages), show virtual keyboard (AI Coach) |
+| Start | Pause / resume workout, start training from editor, save preferences |
+| Select | Open preferences (most pages), show virtual keyboard when a prompt is focused |
 | Guide (Xbox/PS) | Toggle fullscreen on/off |
 | L1 / R1 | Switch to previous / next tab |
 | L2 / R2 | Scroll detail views (history, summaries) |

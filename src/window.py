@@ -9,7 +9,6 @@ from settings import app_settings
 from ui_scaling import apply_scaling
 from controller_manager import ControllerManager
 from controller_hints import ControllerHintsOverlay
-from textwrap import dedent
 import logging
 
 _log = logging.getLogger("window")
@@ -23,6 +22,10 @@ class MainWindow(Adw.ApplicationWindow):
         super().__init__(**kwargs)
         self.set_title("Training")
         self.set_default_size(600, 700)
+
+        self._controller = None
+        self._open_dialog = None
+        self._resize_timeout_id = 0
 
         self._store = DataStore()
         self._store.seed_default_plans()
@@ -81,9 +84,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.connect("notify::default-width", self._on_window_state_changed)
         self.connect("notify::default-height", self._on_window_state_changed)
 
-        self._controller = None
-        self._open_dialog = None
-        self._resize_timeout_id = 0
+        self._apply_color_scheme()
 
     # ---------- Controller Handling ----------
 
@@ -97,40 +98,30 @@ class MainWindow(Adw.ApplicationWindow):
             return False
         return self._controller.deck_mode
 
-    def _apply_controller_css(self):
+    def _apply_color_scheme(self):
+        from gi.repository import Adw
+        style_manager = Adw.StyleManager.get_default()
+        scheme_map = {
+            "default": Adw.ColorScheme.DEFAULT,
+            "light": Adw.ColorScheme.FORCE_LIGHT,
+            "dark": Adw.ColorScheme.FORCE_DARK,
+        }
+        style_manager.set_color_scheme(scheme_map.get(app_settings.color_scheme, Adw.ColorScheme.DEFAULT))
+
+    def _apply_app_css(self):
         display = Gdk.Display.get_default()
         if display is None:
             return
-        css = dedent("""
-            .controller-focus {
-                outline: 3px solid @accent_bg_color;
-                outline-offset: -1px;
-            }
-        """)
         provider = Gtk.CssProvider()
-        provider.load_from_data(css.encode())
+        try:
+            import os
+            css_path = os.path.join(os.path.dirname(__file__), "app_style.css")
+            provider.load_from_path(css_path)
+        except Exception:
+            return
         Gtk.StyleContext.add_provider_for_display(display, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
 
     def _apply_deck_css(self):
-        display = Gdk.Display.get_default()
-        if display is None:
-            return
-        css = dedent("""
-            .deck-mode button:not(.flat):not(.image-button) {
-                min-width: 64px;
-                min-height: 44px;
-            }
-            .deck-mode .controller-hints-label {
-                font-size: 15px;
-                padding: 10px 16px;
-                border-radius: 20px;
-                background: rgba(0,0,0,0.5);
-                color: white;
-            }
-        """)
-        provider = Gtk.CssProvider()
-        provider.load_from_data(css.encode())
-        Gtk.StyleContext.add_provider_for_display(display, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
         self.add_css_class("deck-mode")
 
     def _on_controller_connected(self, manager):
@@ -326,7 +317,7 @@ class MainWindow(Adw.ApplicationWindow):
 
     def _on_realize(self, *args):
         _log.info("Window realized — initialising controller")
-        self._apply_controller_css()
+        self._apply_app_css()
         self._controller = ControllerManager()
         self._controller.connect("action_activated", self._on_controller_action)
         self._controller.connect("device_connected", self._on_controller_connected)
@@ -334,21 +325,10 @@ class MainWindow(Adw.ApplicationWindow):
 
         if self._is_deck_mode():
             self._apply_deck_css()
+            if not self.is_fullscreen():
+                GLib.idle_add(self.fullscreen)
 
-        self._apply_fullscreen_setting()
         GLib.idle_add(self._do_font_update)
-
-    def _apply_fullscreen_setting(self):
-        mode = app_settings.fullscreen_mode
-        if mode == "on":
-            if not self.is_fullscreen():
-                GLib.idle_add(self.fullscreen)
-        elif mode == "off":
-            if self.is_fullscreen():
-                GLib.idle_add(self.unfullscreen)
-        elif mode == "auto" and self._is_deck_mode():
-            if not self.is_fullscreen():
-                GLib.idle_add(self.fullscreen)
 
     def _on_window_state_changed(self, *args):
         if self._resize_timeout_id > 0:
@@ -382,10 +362,22 @@ class MainWindow(Adw.ApplicationWindow):
         show_workout = app_settings.show_workout_page
         show_ai = app_settings.show_ai_page
 
+        visibility = {
+            "home": show_home,
+            "timer": show_timer,
+            "plans": show_workout,
+            "ai": show_ai,
+            "history": True,
+        }
+
         self._home_page.set_visible(show_home)
         self._timer_page.set_visible(show_timer)
         self._plans_page.set_visible(show_workout)
         self._ai_page.set_visible(show_ai)
+
+        current_name = self._stack.get_visible_child_name()
+        if current_name and visibility.get(current_name, False):
+            return
 
         if show_home:
             self._stack.set_visible_child_name("home")
@@ -408,6 +400,10 @@ class MainWindow(Adw.ApplicationWindow):
             self._history.refresh()
         elif child == self._home:
             self._home.refresh()
+        elif child == self._training_plan:
+            self._training_plan.on_page_visible()
+        elif child == self._ai_coach:
+            self._ai_coach.on_page_visible()
 
         self._on_window_state_changed()
         self._update_hints_visibility()
@@ -422,4 +418,4 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_dialog_closed(self):
         self._open_dialog = None
         self._rebuild_tabs()
-        self._apply_fullscreen_setting()
+        self._update_hints_visibility()

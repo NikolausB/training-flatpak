@@ -10,6 +10,10 @@ gi.require_version("Adw", "1")
 gi.require_version("Gst", "1.0")
 
 from gi.repository import Adw, Gtk, Gio
+
+# Silence the common libadwaita dark-theme warning on systems that set the
+# legacy GtkSettings key. libadwaita uses Adw.StyleManager instead.
+Gtk.Settings.get_default().set_property("gtk-application-prefer-dark-theme", False)
 from window import MainWindow
 from settings import app_settings
 
@@ -22,8 +26,6 @@ class TrainingApp(Adw.Application):
         )
 
     def do_activate(self):
-        if app_settings.force_dark:
-            Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
         win = self.props.active_window
         if not win:
             win = MainWindow(application=self)

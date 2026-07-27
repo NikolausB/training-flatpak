@@ -3,6 +3,8 @@ pkgdatadir = join_paths(get_option('datadir'), 'training')
 python_modules = [
   '__init__.py',
   'ai_coach.py',
+  'app_style.css',
+  'controller_focus.py',
   'controller_hints.py',
   'controller_manager.py',
   'csv_io.py',

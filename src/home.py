@@ -1,5 +1,6 @@
 from collections import Counter
 from gi.repository import Adw, Gtk
+from controller_focus import ControllerFocusTracker
 from data_store import DataStore
 from models import TrainingPlan
 
@@ -10,6 +11,7 @@ class HomePage(Adw.Bin):
         self._store = data_store
         self._training_plan_page = training_plan_page
         self._on_switch_to_plans = None
+        self._focus = ControllerFocusTracker()
         self._build_ui()
 
     def _build_ui(self):
@@ -32,9 +34,9 @@ class HomePage(Adw.Bin):
         self._recommended_row = None
         box.append(self._recommended_card)
 
-        browse_btn = Gtk.Button(label="Browse Training Plans", css_classes=["pill"], halign=Gtk.Align.CENTER)
-        browse_btn.connect("clicked", lambda _: self._go_to_plans())
-        box.append(browse_btn)
+        self._browse_btn = Gtk.Button(label="Browse Training Plans", css_classes=["pill"], halign=Gtk.Align.CENTER)
+        self._browse_btn.connect("clicked", lambda _: self._go_to_plans())
+        box.append(self._browse_btn)
 
         clamp.set_child(box)
         scrolled.set_child(clamp)
@@ -43,6 +45,17 @@ class HomePage(Adw.Bin):
     def refresh(self):
         self._update_recent()
         self._update_recommended()
+        self._refresh_focus()
+        self._focus.focus_first()
+
+    def _refresh_focus(self):
+        widgets = []
+        if self._recent_row is not None:
+            widgets.append(self._recent_row)
+        if self._recommended_row is not None:
+            widgets.append(self._recommended_row)
+        widgets.append(self._browse_btn)
+        self._focus.set_widgets(widgets)
 
     def _update_recent(self):
         if self._recent_row:
@@ -170,38 +183,19 @@ class HomePage(Adw.Bin):
     def get_controller_context(self):
         return "list"
 
-    def _focusable_widgets(self):
-        widgets = []
-        if self._recent_row is not None:
-            widgets.append(self._recent_row)
-        if self._recommended_row is not None:
-            widgets.append(self._recommended_row)
-        return widgets
-
-    def _focus_cycle(self, delta):
-        widgets = self._focusable_widgets()
-        if not widgets:
-            return
-        idx = getattr(self, '_controller_focus_idx', -1)
-        old = widgets[idx] if 0 <= idx < len(widgets) else None
-        next_idx = (idx + delta) % len(widgets)
-        self._controller_focus_idx = next_idx
-        if old is not None and old is not widgets[next_idx]:
-            old.remove_css_class("controller-focus")
-        widgets[next_idx].add_css_class("controller-focus")
-        widgets[next_idx].grab_focus()
-
     def controller_dpad_up(self):
-        self._focus_cycle(-1)
+        self._focus.cycle(-1)
 
     def controller_dpad_down(self):
-        self._focus_cycle(1)
+        self._focus.cycle(1)
 
     def controller_a(self):
-        idx = getattr(self, '_controller_focus_idx', 0)
-        widgets = self._focusable_widgets()
-        if 0 <= idx < len(widgets):
-            widgets[idx].activate()
+        widget = self._focus.current_widget()
+        if widget is not None:
+            if isinstance(widget, Gtk.Button):
+                widget.emit("clicked")
+            else:
+                widget.activate()
 
     def controller_back(self):
         if self._on_switch_to_plans:

@@ -27,6 +27,9 @@ CSV_HEADER = [
     "actual_rest_seconds",
     "completed",
     "round_number",
+    "exercise_started_at",
+    "exercise_finished_at",
+    "set_number",
 ]
 
 
@@ -58,6 +61,9 @@ def export_history_csv(sessions: list[TrainingSession], filepath: str) -> None:
                     _fmt(ex.actual_rest_seconds),
                     "True" if ex.completed else "False",
                     ex.round_number,
+                    ex.started_at.isoformat() if ex.started_at else "",
+                    ex.finished_at.isoformat() if ex.finished_at else "",
+                    ex.set_number,
                 ])
 
 
@@ -102,6 +108,9 @@ def import_history_csv(filepath: str) -> list[TrainingSession]:
                 "actual_rest_seconds": _blank_to_none_int(row.get("actual_rest_seconds", "")),
                 "completed": row.get("completed", "").strip().lower() in ("true", "1", "yes", "on"),
                 "round_number": _int(row.get("round_number", "1")),
+                "started_at": _parse_datetime(row.get("exercise_started_at", "")),
+                "finished_at": _parse_datetime(row.get("exercise_finished_at", "")),
+                "set_number": _int(row.get("set_number", "1")),
             }
             sessions_by_id[sid]["exercises"].append(ex_log)
 
@@ -159,6 +168,16 @@ def _int(val: str) -> int:
         return int(val.strip() or 0)
     except ValueError:
         return 0
+
+
+def _parse_datetime(val: str):
+    v = val.strip()
+    if not v:
+        return None
+    try:
+        return datetime.fromisoformat(v)
+    except ValueError:
+        return None
 
 
 def export_plans_json(plans: list[TrainingPlan], filepath: str) -> None:
